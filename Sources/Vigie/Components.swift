@@ -17,11 +17,12 @@ enum Theme {
 // MARK: - Navigation (partagée pour pouvoir piloter les captures d'écran)
 
 enum SidebarSection: String, CaseIterable, Identifiable {
-    case overview, apps, destinations, connections, ports, dns, devices, network, journal
+    case overview, vigilance, apps, destinations, connections, ports, dns, devices, network, journal
     var id: String { rawValue }
     var title: String {
         switch self {
         case .overview: return "Vue d'ensemble"
+        case .vigilance: return "Vigilance"
         case .apps: return "Applications"
         case .destinations: return "Destinations"
         case .connections: return "Connexions"
@@ -35,6 +36,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .overview: return "gauge.with.dots.needle.67percent"
+        case .vigilance: return "shield.lefthalf.filled"
         case .apps: return "square.grid.2x2"
         case .destinations: return "paperplane"
         case .connections: return "arrow.left.arrow.right"

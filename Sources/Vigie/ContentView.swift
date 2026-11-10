@@ -22,6 +22,7 @@ struct ContentView: View {
             Group {
                 switch nav.section {
                 case .overview: OverviewView()
+                case .vigilance: VigilanceView()
                 case .apps: AppsView()
                 case .destinations: DestinationsView()
                 case .connections: ConnectionsView()
@@ -49,6 +50,7 @@ struct ContentView: View {
 
     private func badge(for s: SidebarSection) -> Int {
         switch s {
+        case .vigilance: return store.attentionAlertCount
         case .apps: return store.apps.filter { $0.rateIn + $0.rateOut >= 1 }.count
         case .connections: return store.connections.filter { $0.scope == .internet || $0.scope == .lan }.count
         case .ports: return store.listeners.filter(\.exposed).count
@@ -60,6 +62,7 @@ struct ContentView: View {
 
 struct SidebarFooter: View {
     @Environment(NetworkStore.self) private var store
+    @AppStorage("vigilance") private var vigilance = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -72,6 +75,14 @@ struct SidebarFooter: View {
             if let m = store.statusMessage {
                 Text(m).font(.system(size: 11)).foregroundStyle(Theme.warn)
             }
+            Toggle(isOn: $vigilance) {
+                HStack(spacing: 5) {
+                    Image(systemName: vigilance ? "shield.lefthalf.filled" : "shield.slash").foregroundStyle(vigilance ? Theme.accent : .secondary)
+                    Text("Mode vigilance").font(.system(size: 12))
+                }
+            }
+            .toggleStyle(.switch).controlSize(.small)
+            .help("Vigie repère ce qui sort de l'ordinaire (envois massifs, nouveaux appareils, pannes…) et vous prévient.")
             Toggle(isOn: Binding(get: { store.isDemo }, set: { store.setDemo($0) })) {
                 Text("Mode démonstration").font(.system(size: 12))
             }

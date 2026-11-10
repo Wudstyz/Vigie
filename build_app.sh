@@ -7,12 +7,17 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="Vigie"
-VERSION="${VERSION:-1.0}"
+VERSION="${VERSION:-1.1}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 BUNDLE_ID="io.github.wudstyz.vigie"
 MIN_MACOS="14.0"        # imposé par Package.swift (.macOS(.v14)) : API « Observation » de SwiftUI
 OUT="build"
 APP="$OUT/$APP_NAME.app"
+# On assemble et on signe dans un dossier temporaire : le Finder / iCloud (Bureau synchronisé) ajoute des
+# attributs étendus aux dossiers, et codesign refuse alors de signer (« Finder information not allowed »).
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+BUILD_APP="$WORK/$APP_NAME.app"
 
 echo "▶ 1/5  Compilation (release, arm64)…"
 swift build -c release --arch arm64 ${SWIFTPM_FLAGS:-}
@@ -23,11 +28,10 @@ echo "▶ 2/5  Icône…"
 [ -f icon/icon.icns ] || scripts/make_icns.sh
 
 echo "▶ 3/5  Assemblage de l'app…"
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
-cp icon/icon.icns "$APP/Contents/Resources/icon.icns"
-cat > "$APP/Contents/Info.plist" <<PLIST
+mkdir -p "$BUILD_APP/Contents/MacOS" "$BUILD_APP/Contents/Resources"
+cp "$BIN" "$BUILD_APP/Contents/MacOS/$APP_NAME"
+cp icon/icon.icns "$BUILD_APP/Contents/Resources/icon.icns"
+cat > "$BUILD_APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -53,15 +57,20 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-plutil -lint "$APP/Contents/Info.plist" >/dev/null
-printf 'APPL????' > "$APP/Contents/PkgInfo"
+plutil -lint "$BUILD_APP/Contents/Info.plist" >/dev/null
+printf 'APPL????' > "$BUILD_APP/Contents/PkgInfo"
 
 echo "▶ 4/5  Signature ad hoc (binaire, puis app)…"
-# Le Finder / iCloud peut poser des attributs étendus sur le dossier : codesign les refuse.
-xattr -cr "$APP"
-codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/$APP_NAME"
-codesign --force --sign - --timestamp=none --identifier "$BUNDLE_ID" "$APP"
-codesign --verify --strict --verbose=1 "$APP"
+xattr -cr "$BUILD_APP"
+codesign --force --sign - --timestamp=none "$BUILD_APP/Contents/MacOS/$APP_NAME"
+codesign --force --sign - --timestamp=none --identifier "$BUNDLE_ID" "$BUILD_APP"
+codesign --verify --strict --verbose=1 "$BUILD_APP"
+[ -f "$BUILD_APP/Contents/_CodeSignature/CodeResources" ] || { echo "✗ signature incomplète (CodeResources absent)"; exit 1; }
+# Copie finale (sans attributs étendus) dans build/
+rm -rf "$APP"; mkdir -p "$OUT"
+ditto --noextattr --norsrc "$BUILD_APP" "$APP"
+xattr -cr "$APP" 2>/dev/null || true
+codesign --verify --strict "$APP" || { echo "✗ la copie finale ne passe pas la vérification de signature"; exit 1; }
 
 echo "▶ 5/5  Vérifications…"
 ARCH="$(lipo -archs "$APP/Contents/MacOS/$APP_NAME")"

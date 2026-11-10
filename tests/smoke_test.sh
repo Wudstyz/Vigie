@@ -18,6 +18,6 @@ for i in $(seq 1 90); do kill -0 $PID 2>/dev/null || break; sleep 1; done
 kill $PID 2>/dev/null || true
 
 N=$(ls "$OUT"/*.png 2>/dev/null | wc -l | tr -d ' ')
-echo "   captures produites : $N / 9  (dans $OUT)"
-[ "$N" = "9" ] || { echo "✗ échec"; exit 1; }
+echo "   captures produites : $N / 10  (dans $OUT)"
+[ "$N" = "10" ] || { echo "✗ échec"; exit 1; }
 echo "✓ L'app démarre et dessine tous ses écrans sans Homebrew."

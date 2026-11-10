@@ -19,3 +19,6 @@ __pycache__/
 *.log
 *.fifo
 .swiftpm/
+
+# Dossier de livraison local (app et dmg)
+App/

@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="Vigie"
-VERSION="${VERSION:-1.0}"
+VERSION="${VERSION:-1.1}"
 APP="build/$APP_NAME.app"
 DMG="build/$APP_NAME-$VERSION.dmg"
 
@@ -13,7 +13,10 @@ DMG="build/$APP_NAME-$VERSION.dmg"
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
-cp -R "$APP" "$STAGE/"
+ditto --noextattr --norsrc "$APP" "$STAGE/$APP_NAME.app"
+xattr -cr "$STAGE/$APP_NAME.app" 2>/dev/null || true
+# Garde-fou : on ne fabrique jamais un .dmg dont l'app a une signature invalide.
+codesign --verify --strict "$STAGE/$APP_NAME.app" || { echo "✗ signature de l'app invalide : .dmg non créé"; exit 1; }
 ln -s /Applications "$STAGE/Applications"
 cat > "$STAGE/Première ouverture.txt" <<'TXT'
 VIGIE — première ouverture

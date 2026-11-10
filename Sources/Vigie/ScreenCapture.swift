@@ -9,7 +9,8 @@ enum ScreenCapture {
         Task { @MainActor in
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
             // Laisser le temps à la fenêtre d'apparaître et aux données de s'accumuler (graphique, journal…)
-            try? await Task.sleep(nanoseconds: 14_000_000_000)
+            let delay = UInt64((Double(ProcessInfo.processInfo.environment["VIGIE_CAPTURE_DELAY"] ?? "") ?? 14) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: delay)
 
             guard let window = NSApp.windows.first(where: { $0.canBecomeMain && $0.isVisible }) else {
                 FileHandle.standardError.write(Data("Aucune fenêtre à capturer\n".utf8)); NSApp.terminate(nil); return
@@ -28,7 +29,15 @@ enum ScreenCapture {
                 if section == .destinations { nav.selectedDest = store.destinations.first(where: { $0.scope == .internet })?.id }
                 // Le scan du réseau local réel prend quelques secondes : on le laisse finir.
                 try? await Task.sleep(nanoseconds: section == .devices && !store.isDemo ? 10_000_000_000 : 1_600_000_000)
-                save(window: window, name: "\(String(format: "%02d", SidebarSection.allCases.firstIndex(of: section)! + 1))-\(section.rawValue)", dir: dir)
+                save(window: window, name: section.rawValue, dir: dir)
+            }
+            // Aide aux tests : liste des alertes détectées (VIGIE_DUMP_ALERTS=fichier)
+            if let f = ProcessInfo.processInfo.environment["VIGIE_DUMP_ALERTS"], !f.isEmpty {
+                let now = store.lastSampleDate ?? Date()
+                let lines = store.alerts.map { a in
+                    "\(a.severity.label)\t\(a.oneShot ? "ponctuelle" : (a.isOngoing(at: now) ? "en cours" : "terminée"))\t\(a.dismissed ? "ignorée" : "active")\t\(a.id)\t\(a.title)"
+                }
+                try? lines.joined(separator: "\n").write(toFile: f, atomically: true, encoding: .utf8)
             }
             NSApp.terminate(nil)
         }

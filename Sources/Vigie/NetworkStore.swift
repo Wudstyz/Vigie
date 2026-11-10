@@ -7,6 +7,9 @@ enum Prefs {
     static var ownerLookup: Bool { UserDefaults.standard.object(forKey: "ownerLookup") as? Bool ?? false }
     static var pingInternet: Bool { UserDefaults.standard.object(forKey: "pingInternet") as? Bool ?? true }
     static var showMenuBar: Bool { UserDefaults.standard.object(forKey: "showMenuBar") as? Bool ?? true }
+    static var vigilance: Bool { UserDefaults.standard.object(forKey: "vigilance") as? Bool ?? true }
+    static var notify: Bool { UserDefaults.standard.object(forKey: "notify") as? Bool ?? true }
+    static var sensitivity: Sensitivity { Sensitivity(rawValue: UserDefaults.standard.string(forKey: "sensitivity") ?? "") ?? .normal }
 }
 
 enum DNSMode { case off, starting, on }
@@ -40,6 +43,9 @@ final class NetworkStore {
     var dnsStatus: String?
     var sessionStart = Date()
     var lastSampleDate: Date?
+    var alerts: [AlertRow] = []
+    /// Non nil tant que Vigie apprend ce qui est « habituel » (première utilisation) : aucune « nouveauté » n'est signalée.
+    var learningEnds: Date?
 
     // MARK: - Moteur interne
     @ObservationIgnored private let monitor = NettopMonitor()
@@ -51,6 +57,20 @@ final class NetworkStore {
     @ObservationIgnored private var demoTimer: Timer?
     @ObservationIgnored private var slowTimer: Timer?
     @ObservationIgnored private var started = false
+    @ObservationIgnored private var engine: VigilanceEngine
+    @ObservationIgnored private var lastNotified: [String: Date] = [:]
+
+    init() {
+        engine = VigilanceEngine(baseline: Baseline.load() ?? Baseline())
+    }
+
+    /// Moteur « réel » : reprend ce que Vigie a appris ; au tout premier usage réel, l'apprentissage commence maintenant.
+    private func makeRealEngine() -> VigilanceEngine {
+        if let b = Baseline.load() { return VigilanceEngine(baseline: b) }
+        let e = VigilanceEngine(baseline: Baseline())
+        e.baseline.save()
+        return e
+    }
 
     private struct AppAcc {
         var key: String, name: String
@@ -103,6 +123,7 @@ final class NetworkStore {
     }
 
     func shutdown() {
+        saveBaselineIfNeeded()
         monitor.stop()
         sniffer.stop()
         demoTimer?.invalidate()
@@ -118,9 +139,11 @@ final class NetworkStore {
         if on {
             let d = DemoSource()
             demo = d
+            engine = VigilanceEngine(baseline: d.baseline())     // en démo : rien n'est lu ni écrit sur le disque
             network = d.network()
             devices = d.devices()
             lastScan = Date()
+            checkDevices(now: Date(), gatewayIP: "192.168.1.1")
             demoTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, let d = self.demo else { return }
@@ -130,15 +153,17 @@ final class NetworkStore {
                     if Int.random(in: 0..<6) == 0, let q = d.nextDNS() { self.handleDNS(q) }
                 }
             }
-            for i in 0..<8 {   // chauffe : le graphique a déjà un peu d'historique à l'ouverture
+            let warm = 70
+            for i in 0..<warm {   // chauffe : graphique, journal et alertes ont déjà du contenu à l'ouverture
                 var s = d.nextSample()
-                s.date = Date().addingTimeInterval(Double(i - 8))
+                s.date = Date().addingTimeInterval(Double(i - warm))
                 ingest(s)
             }
             dnsMode = .on
             dnsStatus = "Mode démonstration : requêtes DNS fictives."
         } else {
             demo = nil
+            engine = makeRealEngine()
             if dnsMode == .on { dnsMode = .off; dnsStatus = nil }
             monitor.start()
             refreshNetwork()
@@ -150,7 +175,7 @@ final class NetworkStore {
 
     private func resetAll() {
         apps = []; destinations = []; connections = []; listeners = []; devices = []; events = []
-        dnsQueries = []; history = []; dnsNames = [:]
+        dnsQueries = []; history = []; dnsNames = [:]; alerts = []; learningEnds = nil; lastNotified = [:]
         appAcc = [:]; destAcc = [:]; prevProc = [:]; prevConn = [:]; knownListeners = []; prevIfaces = [:]
         hasBaseline = false; lastDate = nil
         rateDown = 0; rateUp = 0; totalDown = 0; totalUp = 0
@@ -176,8 +201,9 @@ final class NetworkStore {
         Task.detached(priority: .utility) { [store = self] in
             let g = gw.flatMap { SystemInfo.ping($0) }
             let i = wantInternet ? SystemInfo.ping("1.1.1.1") : nil
-            await MainActor.run { store.latencyGateway = g; store.latencyInternet = i }
+            await MainActor.run { store.latencyGateway = g; store.latencyInternet = i; store.runHealth() }
         }
+        saveBaselineIfNeeded()
         if slowCount % 5 == 0 { refreshNetwork() }
         if slowCount % 20 == 0, lastScan != nil { scanLAN() }   // re-scan toutes les ~2 min une fois lancé
     }
@@ -230,6 +256,12 @@ final class NetworkStore {
         devices = byMac.values.sorted { Self.ipOrder($0.ip) < Self.ipOrder($1.ip) }
         lastScan = now
         scanning = false
+        checkDevices(now: now, gatewayIP: net.gateway)
+    }
+
+    private func checkDevices(now: Date, gatewayIP: String?) {
+        let obs = devices.map { DeviceObs(mac: $0.mac, ip: $0.ip, name: $0.name, randomMAC: $0.randomMAC, isThisMac: $0.isThisMac) }
+        absorb(engine.evaluateDevices(now: now, devices: obs, gatewayIP: gatewayIP), now: now)
     }
 
     private static func ipOrder(_ ip: String) -> UInt32 {
@@ -348,12 +380,21 @@ final class NetworkStore {
         var listenRows: [String: ListenerRow] = [:]
         let resolveNames = Prefs.resolveNames
         ownerResolver.enabled = Prefs.ownerLookup && !isDemo
+        // Pour la vigilance : trafic Internet par application, nouvelles adresses, ports à surveiller
+        var inetDelta: [String: (out: UInt64, in: UInt64)] = [:]
+        var inetIPs: [String: Set<String>] = [:]
+        var inetConns: [String: Int] = [:]
+        var connObs: [ConnObs] = []
+        var listenObs: [ListenerObs] = []
 
         for c in s.conns {
             let pname = pidName[c.pid] ?? "?"
             let id = identity(pid: c.pid, name: pname)
 
             if c.isListening, let lp = c.localPort {
+                // Les ports UDP « temporaires » (≥ 49152) sont ceux qu'ouvrent les applications clientes (DNS, QUIC…) :
+                // ce ne sont pas des services qui attendent des connexions.
+                if c.proto == "UDP" && lp >= 49152 { continue }
                 let exposed = Net.isExposed(listenAddress: c.localAddr)
                 let key = "\(id.key)|\(c.proto)|\(lp)|\(exposed)"
                 if listenRows[key] == nil {
@@ -361,6 +402,7 @@ final class NetworkStore {
                         id: key, appName: id.name, pid: c.pid, proto: c.proto,
                         address: c.localAddr == "*" ? "toutes les interfaces" : c.localAddr, port: lp,
                         service: Net.service(port: lp, proto: c.proto), exposed: exposed)
+                    listenObs.append(ListenerObs(key: key, appKey: id.key, appName: id.name, port: lp, exposed: exposed, isSystem: id.isSystem))
                     if !first && !knownListeners.contains(key) {
                         addEvent(.newListener, "\(id.name) ouvre le port \(lp)",
                                  "\(c.proto) · \(exposed ? "visible depuis le réseau" : "accessible depuis ce Mac uniquement")")
@@ -383,6 +425,16 @@ final class NetworkStore {
                 dIn = c.bytesIn; dOut = c.bytesOut
             }
             newPrevConn[ck] = (c.bytesIn, c.bytesOut)
+            if scope == .internet {
+                var t = inetDelta[id.key] ?? (0, 0)
+                t.out += dOut; t.in += dIn
+                inetDelta[id.key] = t
+                inetIPs[id.key, default: []].insert(ip)
+                inetConns[id.key, default: 0] += 1
+                if let rp = c.remotePort, VigilanceEngine.suspiciousPorts.contains(rp) {
+                    connObs.append(ConnObs(appKey: id.key, appName: id.name, remoteIP: ip, remotePort: rp, scope: scope))
+                }
+            }
 
             // destination
             var d = destAcc[ip] ?? DestAcc(ip: ip, scope: scope, firstSeen: now, lastSeen: now)
@@ -441,6 +493,11 @@ final class NetworkStore {
             if history.count > 240 { history.removeFirst(history.count - 240) }
         }
 
+        // 3 bis) Vigilance : repérer ce qui sort de l'ordinaire
+        engine.sensitivity = Prefs.sensitivity
+        let obs = appAcc.values.map { AppObs(key: $0.key, name: $0.name, path: $0.path, isSystem: $0.isSystem, internetActive: (inetConns[$0.key] ?? 0) > 0) }
+        absorb(engine.evaluate(now: now, apps: obs, deltas: inetDelta, newInternetIPs: inetIPs, conns: connObs, listeners: listenObs), now: now)
+
         // 4) Nettoyage
         if destAcc.count > 3000 {
             let old = destAcc.values.filter { $0.conns == 0 }.sorted { $0.lastSeen < $1.lastSeen }.prefix(destAcc.count - 2500)
@@ -482,6 +539,90 @@ final class NetworkStore {
         return a.dests.map { ip, v in
             AppDestination(id: ip, ip: ip, host: hostName(ip), scope: Net.scope(of: ip), totalIn: v.totalIn, totalOut: v.totalOut, lastSeen: v.last)
         }.sorted { ($0.totalOut, $0.totalIn) > ($1.totalOut, $1.totalIn) }
+    }
+
+    // MARK: - Vigilance
+
+    /// Alertes à afficher : non ignorées, et (ponctuelles ou encore en cours).
+    var activeAlerts: [AlertRow] {
+        let now = lastSampleDate ?? Date()
+        return alerts.filter { !$0.dismissed && ($0.oneShot || $0.isOngoing(at: now)) }
+    }
+    var activeAlertCount: Int { activeAlerts.count }
+    /// Alertes qui demandent vraiment un coup d'œil (les simples « à savoir » ne comptent pas).
+    var attentionAlertCount: Int { activeAlerts.filter { $0.severity >= .attention }.count }
+    var topSeverity: Severity? { activeAlerts.map(\.severity).max() }
+
+    func runHealth() {
+        let c = engine.evaluateHealth(gatewayMs: latencyGateway, internetMs: latencyInternet,
+                                      internetEnabled: Prefs.pingInternet, rssi: network.wifi?.rssi)
+        absorb(c, now: Date())
+    }
+
+    private func absorb(_ cands: [AlertCandidate], now: Date) {
+        learningEnds = (!isDemo && engine.isLearning(now)) ? engine.learningEnds : nil
+        guard Prefs.vigilance else { return }
+        for c in cands {
+            if let i = alerts.firstIndex(where: { $0.id == c.key }) {
+                // Une situation qui avait cessé puis revient redevient une alerte visible
+                let wasStale = !c.oneShot && now.timeIntervalSince(alerts[i].lastSeen) >= AlertRow.ongoingWindow
+                alerts[i].lastSeen = now
+                alerts[i].count += 1
+                alerts[i].title = c.title
+                alerts[i].explanation = c.explanation
+                if c.severity > alerts[i].severity { alerts[i].severity = c.severity; alerts[i].dismissed = false; notify(c, now: now) }
+                if wasStale { alerts[i].dismissed = false; notify(c, now: now) }
+            } else {
+                alerts.insert(AlertRow(id: c.key, firstSeen: now, lastSeen: now, severity: c.severity, title: c.title,
+                                       explanation: c.explanation, appName: c.appName, appKey: c.appKey, symbol: c.symbol, oneShot: c.oneShot), at: 0)
+                if let nm = c.appName { addEvent(.info, "Vigilance : \(c.title)", nm) } else { addEvent(.info, "Vigilance : \(c.title)", c.severity.label) }
+                notify(c, now: now)
+            }
+        }
+        if alerts.count > 200 { alerts.removeLast(alerts.count - 200) }
+    }
+
+    private func notify(_ c: AlertCandidate, now: Date) {
+        guard Prefs.notify, !isDemo, c.severity >= .attention else { return }
+        if let last = lastNotified[c.key], now.timeIntervalSince(last) < 600 { return }
+        lastNotified[c.key] = now
+        AlertNotifier.post(title: c.severity == .important ? "⚠️ Vigie : \(c.title)" : "Vigie : \(c.title)", body: c.explanation, id: c.key)
+    }
+
+    func dismiss(_ id: String) {
+        if let i = alerts.firstIndex(where: { $0.id == id }) { alerts[i].dismissed = true }
+    }
+
+    func restore(_ id: String) {
+        if let i = alerts.firstIndex(where: { $0.id == id }) { alerts[i].dismissed = false }
+    }
+
+    /// « Faire confiance » : Vigie ne signalera plus cette application.
+    func trust(appKey: String) {
+        engine.trust(appKey)
+        for i in alerts.indices where alerts[i].appKey == appKey { alerts[i].dismissed = true }
+        saveBaselineIfNeeded()
+    }
+    func isTrusted(appKey: String) -> Bool { engine.isTrusted(appKey) }
+
+    func untrustAll() {
+        engine.baseline.trusted = []
+        saveBaselineIfNeeded(force: true)
+    }
+
+    /// Oublie ce que Vigie a appris et recommence l'apprentissage.
+    func resetLearning() {
+        engine = VigilanceEngine(baseline: Baseline())
+        alerts = []
+        saveBaselineIfNeeded(force: true)
+    }
+
+    var trustedCount: Int { engine.baseline.trusted.count }
+
+    private func saveBaselineIfNeeded(force: Bool = false) {
+        guard !isDemo, force || engine.dirty else { return }
+        engine.baseline.save()
+        engine.markClean()
     }
 
     // MARK: - Mise en forme

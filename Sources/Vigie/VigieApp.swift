@@ -67,7 +67,7 @@ struct MenuBarLabel: View {
     @Environment(NetworkStore.self) private var store
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "dot.radiowaves.left.and.right")
+            Image(systemName: store.attentionAlertCount > 0 ? "exclamationmark.shield.fill" : "dot.radiowaves.left.and.right")
             Text("↓\(Fmt.rateShort(store.rateDown))  ↑\(Fmt.rateShort(store.rateUp))").monospacedDigit()
         }
     }
@@ -86,6 +86,10 @@ struct MenuBarContent: View {
                 if store.isDemo { Badge(text: "DÉMO", color: Theme.warn) }
             }
             RatePair(down: store.rateDown, up: store.rateUp)
+            if let top = store.topSeverity, top >= .attention {
+                Label("\(store.attentionAlertCount) point\(store.attentionAlertCount > 1 ? "s" : "") à vérifier", systemImage: top.symbol)
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(top.color)
+            }
             Divider()
             Text("En ce moment").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
             if top.allSatisfy({ $0.rateIn + $0.rateOut < 1 }) {

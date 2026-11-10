@@ -84,7 +84,10 @@ final class DemoSource {
             DemoApp(pid: 1260, name: "DocuNuage", paths: [],
                     dests: [Dest(ip: "192.0.2.77", host: "synchro.docunuage.exemple.com", port: 443, weightIn: 0.3, weightOut: 5),
                             Dest(ip: "192.0.2.78", host: "telemetrie.docunuage.exemple.com", port: 443, weightIn: 0.05, weightOut: 1)],
-                    profile: { _ in (9_000 + Double.random(in: 0...4_000), 170_000 + Double.random(in: 0...50_000)) }),
+                    profile: { _ in (9_000 + Double.random(in: 0...4_000), 620_000 + Double.random(in: 0...90_000)) }),
+            DemoApp(pid: 1380, name: "syncd-helper", paths: [],
+                    dests: [Dest(ip: "192.0.2.99", host: "", port: 4444, weightIn: 0.02, weightOut: 1)],
+                    profile: { _ in (14_000 + Double.random(in: 0...6_000), 2_600_000 + Double.random(in: 0...400_000)) }),
             DemoApp(pid: 1300, name: "softwareupdated", paths: [], system: true,
                     dests: [Dest(ip: "198.51.100.120", host: "mises-a-jour.exemple.net", port: 443, weightIn: 10, weightOut: 0.2)],
                     profile: { t in (t % 100 > 55 && t % 100 < 85) ? (900_000, 12_000) : (600, 300) }),
@@ -106,6 +109,8 @@ final class DemoSource {
             let key = path ?? "proc:\(a.name)"
             identityByPid[a.pid] = AppIdentity(key: key, name: a.name, path: path, isSystem: a.system)
         }
+        identityByPid[1380] = AppIdentity(key: "proc:syncd-helper", name: "syncd-helper",
+                                          path: "/private/var/folders/zz/demo/T/syncd-helper", isSystem: false)
         for (pid, name, path) in [(Int32(1340), "Centre de contrôle", "/System/Library/CoreServices/ControlCenter.app"),
                                   (1350, "smbd", ""), (1360, "node", ""), (1370, "rapportd", "")] {
             let ok = !path.isEmpty && FileManager.default.fileExists(atPath: path)
@@ -182,6 +187,7 @@ final class DemoSource {
         let listens: [(Int32, String, String, Int)] = [
             (1330, "UDP", "*", 5353), (1340, "TCP", "*", 7000), (1340, "TCP", "*", 5000),
             (1350, "TCP", "*", 445), (1360, "TCP", "127.0.0.1", 3000), (1370, "TCP", "*", 49152),
+            (1260, "TCP", "*", 8443),
         ]
         for (pid, proto, addr, port) in listens {
             if !sample.procs.contains(where: { $0.pid == pid }) {
@@ -194,6 +200,17 @@ final class DemoSource {
     }
 
     func interfaceDeltas(procs: [ProcSample]) -> (UInt64, UInt64) { (lastDown, lastUp) }
+
+    /// « Ce que Vigie connaît déjà » en démo : tout, sauf quelques nouveautés fictives qui déclenchent des alertes.
+    func baseline() -> Baseline {
+        var b = Baseline()
+        b.createdAt = Date().addingTimeInterval(-3 * 86400)
+        let novel: Set<String> = ["DocuNuage", "syncd-helper"]
+        b.apps = Set(identityByPid.values.filter { !novel.contains($0.name) }.map(\.key))
+        b.devices = Set(devices().map(\.mac).filter { $0 != "—" && $0 != "06:00:5e:00:53:77" })
+        b.gateways["192.168.1.1"] = "00:00:5e:00:53:01"
+        return b
+    }
 
     func latency(base: Double) -> Double { base + Double.random(in: -0.8...2.2) }
 

@@ -21,6 +21,8 @@ struct OverviewView: View {
                            subtitle: store.isDemo ? "Mode démonstration : toutes les données affichées sont fictives."
                                                   : "Tout ce que votre Mac envoie et reçoit, en direct. Lecture seule : Vigie ne modifie rien.")
 
+                VigilanceBanner()
+
                 HStack(spacing: 12) {
                     StatCard(title: "Reçu", value: Fmt.rate(store.rateDown), detail: "\(Fmt.bytes(store.totalDown)) depuis l'ouverture",
                              symbol: "arrow.down.circle.fill", color: Theme.down)
