@@ -1,0 +1,4 @@
+;; Simule un Mac « neuf » : aucun accès à Homebrew ni à /usr/local.
+(version 1)
+(allow default)
+(deny file-read* file-write* (subpath "/opt/homebrew") (subpath "/usr/local"))

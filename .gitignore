@@ -1,0 +1,21 @@
+# Sorties de compilation
+.build/
+build/
+*.dmg
+*.dmg.sha256
+DerivedData/
+*.xcodeproj/xcuserdata/
+
+# Python / outils éventuels
+.venv/
+__pycache__/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Données utilisateur / fichiers temporaires
+*.log
+*.fifo
+.swiftpm/
