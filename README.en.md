@@ -61,13 +61,13 @@ All taken in **demo mode** (fictitious data).
 
 **Requirements**: an **Apple Silicon** Mac (M1 or later) running **macOS 14 Sonoma or later**. Nothing else to install (no Homebrew, Python or Node).
 
-1. Download `Vigie-1.1.dmg` from the [Releases](../../releases) page and open it.
+1. Download `Vigie-1.1.1.dmg` from the [Releases](../../releases) page and open it.
 2. Drag **Vigie** into **Applications**.
 3. **First launch** — Vigie is not signed with a paid Apple developer account (so it is not "notarized"). macOS will show a warning. **Right-click Vigie → Open → Open**. Or, in Terminal:
    ```bash
    xattr -dr com.apple.quarantine /Applications/Vigie.app
    ```
-4. Optional: verify the download with the SHA-256 given on the release page (`shasum -a 256 Vigie-1.1.dmg`).
+4. Optional: verify the download with the SHA-256 given on the release page (`shasum -a 256 Vigie-1.1.1.dmg`).
 
 ## Getting started
 
@@ -89,7 +89,7 @@ On by default ("Mode vigilance" switch at the bottom of the sidebar). Vigie cont
 | **Risky port**: connection to a port often used by remote-control tools (4444, 31337…) | a backdoor |
 | **New application** using the Internet for the first time | good to know, not necessarily bad |
 | **Open port**: an app accepts connections coming from the network | a server started by a program |
-| **New device** on the local network, or **router MAC address change** (possible spoofing) | an intruder on your Wi-Fi |
+| **New device** on the local network, or **router MAC address change** (possible spoofing; "important" if the manufacturer changes, just "good to know" if it is the same, which is common with a Wi-Fi repeater or a multi-interface router) | an intruder on your Wi-Fi |
 | **Outages**: router or Internet not answering, very slow network, weak Wi-Fi signal | "I have a connection problem" |
 
 - **Learning**: on the very first real use, Vigie observes for **15 minutes** what is usual on your Mac (apps, devices, ports) without flagging anything as "new". What it learns is stored in `~/Library/Application Support/Vigie/baseline.json` (app names, MAC addresses of network devices, ports): it stays on your Mac and is never sent. Settings → "Oublier ce que Vigie a appris" to start over.
@@ -125,7 +125,7 @@ Vigie has **no server** and sends **no analytics**. Here is *everything* it can 
 ## Compatibility and known limits
 
 **What was tested** (honestly):
-- macOS **26.6.2**, Apple Silicon Mac: build, **42 unit tests**, launch in **real mode** (real connections, domain names, devices, Wi-Fi) and in **demo mode**.
+- macOS **26.6.2**, Apple Silicon Mac: build, **45 unit tests**, launch in **real mode** (real connections, domain names, devices, Wi-Fi) and in **demo mode**.
 - Launch in a **sandbox with no access to Homebrew** (`tests/smoke_test.sh`), on the same Mac.
 - Measured load: about **2% of one core** for the app.
 - **Vigilance**: tested live by provoking a real anomaly (an unsigned program in a temporary folder that opens a port and uploads ~45 MB to the Internet): the **4 expected alerts** appeared. On the same Mac at rest, **no false alert** was observed (after learning).
@@ -153,10 +153,10 @@ You need Xcode (or the Command Line Tools) with Swift ≥ 5.9. Tested with Swift
 ./build_app.sh          # builds build/Vigie.app (arm64, ad hoc signature)
 ```
 ```bash
-./make_dmg.sh           # builds build/Vigie-1.1.dmg + its SHA-256
+./make_dmg.sh           # builds build/Vigie-1.1.1.dmg + its SHA-256
 ```
 ```bash
-swift test              # 42 unit tests
+swift test              # 45 unit tests
 ```
 ```bash
 tests/smoke_test.sh     # launches the app without Homebrew access and checks its 10 screens

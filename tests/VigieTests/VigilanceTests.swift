@@ -195,17 +195,55 @@ final class VigilanceTests: XCTestCase {
     func testNewDeviceAndGatewayChange() {
         let e = engine()
         let box = DeviceObs(mac: "00:00:5e:00:53:01", ip: "192.168.1.1", name: nil, randomMAC: false, isThisMac: false)
-        // 1re vue de la box : mémorisée, pas d'alerte « changement »
+        // 1re vue de la box : mémorisée, aucune alerte (ni « changement », ni « nouvel appareil » : c'est la box)
         let r1 = e.evaluateDevices(now: t0, devices: [box], gatewayIP: "192.168.1.1")
-        XCTAssertFalse(r1.contains { $0.key.hasPrefix("arp|") })
-        XCTAssertTrue(r1.contains { $0.key.hasPrefix("device|") }, "après l'apprentissage, un appareil jamais vu est signalé")
-        // la box change d'adresse matérielle
+        XCTAssertTrue(r1.isEmpty)
+        // un autre appareil, jamais vu : signalé
+        let tv = DeviceObs(mac: "00:00:5e:00:53:45", ip: "192.168.1.45", name: "tv", randomMAC: false, isThisMac: false)
+        XCTAssertTrue(e.evaluateDevices(now: t0, devices: [tv], gatewayIP: "192.168.1.1").contains { $0.key.hasPrefix("device|") })
+        // la box répond avec une adresse d'un AUTRE fabricant : important
         let fake = DeviceObs(mac: "da:a1:19:00:00:66", ip: "192.168.1.1", name: nil, randomMAC: true, isThisMac: false)
         let r2 = e.evaluateDevices(now: t0.addingTimeInterval(120), devices: [fake], gatewayIP: "192.168.1.1")
         XCTAssertEqual(r2.first { $0.key == "arp|192.168.1.1" }?.severity, .important)
         // ce Mac est ignoré
         let me = DeviceObs(mac: "—", ip: "192.168.1.10", name: "Moi", randomMAC: false, isThisMac: true)
         XCTAssertTrue(e.evaluateDevices(now: t0.addingTimeInterval(240), devices: [me], gatewayIP: "192.168.1.1").isEmpty)
+    }
+
+    /// Cas réel : la box répond tantôt avec une adresse, tantôt avec une autre du MÊME fabricant.
+    func testGatewaySecondAddressSameVendorIsOnlyInfoAndNeverRepeats() {
+        let e = engine()
+        func box(_ mac: String) -> DeviceObs { DeviceObs(mac: mac, ip: "192.168.1.1", name: nil, randomMAC: false, isThisMac: false) }
+        let a = "00:00:5e:00:53:42", b = "00:00:5e:00:53:27"
+        XCTAssertTrue(e.evaluateDevices(now: t0, devices: [box(a)], gatewayIP: "192.168.1.1").isEmpty)
+        let r = e.evaluateDevices(now: t0.addingTimeInterval(120), devices: [box(b)], gatewayIP: "192.168.1.1")
+        XCTAssertEqual(r.map(\.key), ["arp|192.168.1.1"])
+        XCTAssertEqual(r.first?.severity, .info, "même fabricant : simple information")
+        XCTAssertFalse(r.contains { $0.key.hasPrefix("device|") }, "ce n'est pas un « nouvel appareil »")
+        // allers-retours : plus aucune alerte, les deux adresses sont connues
+        for i in 2..<8 {
+            let mac = i % 2 == 0 ? a : b
+            XCTAssertTrue(e.evaluateDevices(now: t0.addingTimeInterval(Double(i) * 120), devices: [box(mac)], gatewayIP: "192.168.1.1").isEmpty)
+        }
+        // mais une adresse d'un autre fabricant reste « important »
+        let r2 = e.evaluateDevices(now: t0.addingTimeInterval(2000), devices: [box("aa:bb:cc:00:11:22")], gatewayIP: "192.168.1.1")
+        XCTAssertEqual(r2.first?.severity, .important)
+    }
+
+    /// Ancien fichier d'apprentissage (une seule adresse mémorisée, pas de liste) : il reste compris.
+    func testLegacyBaselineWithSingleGatewayAddress() {
+        var b = Baseline(); b.createdAt = t0.addingTimeInterval(-86_400)
+        b.gateways["192.168.1.1"] = "00:00:5e:00:53:27"; b.gatewayKnown = nil
+        let e = VigilanceEngine(baseline: b, now: t0.addingTimeInterval(-3600))
+        let box = DeviceObs(mac: "00:00:5e:00:53:42", ip: "192.168.1.1", name: nil, randomMAC: false, isThisMac: false)
+        let r = e.evaluateDevices(now: t0, devices: [box], gatewayIP: "192.168.1.1")
+        XCTAssertEqual(r.first?.severity, .info)
+        XCTAssertEqual(e.baseline.gatewayKnown?["192.168.1.1"]?.count, 2)
+        XCTAssertTrue(e.evaluateDevices(now: t0.addingTimeInterval(60), devices: [box], gatewayIP: "192.168.1.1").isEmpty)
+    }
+
+    func testOUI() {
+        XCTAssertEqual(VigilanceEngine.oui("00:00:5E:00:53:42"), "00:00:5e")
     }
 
     func testDevicesSilentDuringLearning() {
@@ -261,7 +299,7 @@ final class VigilanceTests: XCTestCase {
     // MARK: - Persistance et modèle
 
     func testBaselineRoundTrip() throws {
-        var b = Baseline(); b.apps = ["a", "b"]; b.devices = ["m1"]; b.trusted = ["a"]; b.gateways = ["192.168.1.1": "aa:bb"]
+        var b = Baseline(); b.apps = ["a", "b"]; b.devices = ["m1"]; b.trusted = ["a"]; b.gateways = ["192.168.1.1": "aa:bb"]; b.gatewayKnown = ["192.168.1.1": ["aa:bb", "aa:cc"]]
         b.createdAt = Date(timeIntervalSince1970: 1_700_000_000)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("vigie-baseline-test-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: url) }

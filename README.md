@@ -59,13 +59,13 @@ Toutes prises en **mode démonstration** (données fictives).
 
 **Prérequis** : un Mac **Apple Silicon** (M1 ou plus récent) sous **macOS 14 Sonoma ou plus**. Rien d'autre à installer (ni Homebrew, ni Python, ni Node).
 
-1. Téléchargez `Vigie-1.1.dmg` dans la page [Releases](../../releases) et ouvrez-le.
+1. Téléchargez `Vigie-1.1.1.dmg` dans la page [Releases](../../releases) et ouvrez-le.
 2. Glissez **Vigie** dans **Applications**.
 3. **Première ouverture** — Vigie n'est pas signée par un compte développeur Apple payant (donc pas « notarisée »). macOS affichera un avertissement. Faites un **clic droit sur Vigie → Ouvrir → Ouvrir**. Ou, dans le Terminal :
    ```bash
    xattr -dr com.apple.quarantine /Applications/Vigie.app
    ```
-4. Facultatif : vérifiez le téléchargement avec la somme SHA-256 donnée dans la page de la release (`shasum -a 256 Vigie-1.1.dmg`).
+4. Facultatif : vérifiez le téléchargement avec la somme SHA-256 donnée dans la page de la release (`shasum -a 256 Vigie-1.1.1.dmg`).
 
 ## Premiers pas
 
@@ -87,7 +87,7 @@ Activé par défaut (interrupteur « Mode vigilance » en bas de la barre latér
 | **Port à risque** : connexion vers un port souvent utilisé par des outils de prise de contrôle à distance (4444, 31337…) | une porte dérobée |
 | **Nouvelle application** qui utilise Internet pour la première fois | à savoir, pas forcément grave |
 | **Port ouvert** : une application accepte des connexions venant du réseau | un serveur lancé par un programme |
-| **Nouvel appareil** sur le réseau local, ou **adresse matérielle de la box qui change** (usurpation possible) | un intrus sur le Wi-Fi |
+| **Nouvel appareil** sur le réseau local, ou **adresse matérielle de la box qui change** (usurpation possible ; « important » si le fabricant change, simple « à savoir » si c'est le même, ce qui est courant avec un répéteur Wi-Fi ou une box à plusieurs interfaces) | un intrus sur le Wi-Fi |
 | **Pannes** : la box ou Internet ne répondent plus, réseau très lent, signal Wi-Fi faible | « j'ai un problème de connexion » |
 
 - **Apprentissage** : à la toute première utilisation réelle, Vigie observe pendant **15 minutes** ce qui est habituel sur votre Mac (applications, appareils, ports) sans rien signaler comme « nouveau ». Ce qu'elle apprend est gardé dans `~/Library/Application Support/Vigie/baseline.json` (noms d'applications, adresses MAC des appareils du réseau, ports) : ce fichier reste sur votre Mac et n'est jamais envoyé. Réglages → « Oublier ce que Vigie a appris » pour recommencer.
@@ -123,7 +123,7 @@ Vigie n'a **aucun serveur** et n'envoie **aucune statistique**. Voici *tout* ce 
 ## Compatibilité et limites connues
 
 **Ce qui a été testé** (honnêtement) :
-- macOS **26.6.2**, Mac Apple Silicon : compilation, **42 tests unitaires**, lancement en **mode réel** (vraies connexions, noms de domaine, appareils, Wi-Fi) et en **mode démonstration**.
+- macOS **26.6.2**, Mac Apple Silicon : compilation, **45 tests unitaires**, lancement en **mode réel** (vraies connexions, noms de domaine, appareils, Wi-Fi) et en **mode démonstration**.
 - Lancement dans un **bac à sable sans accès à Homebrew** (`tests/smoke_test.sh`), sur ce même Mac.
 - Consommation mesurée : environ **2 % d'un cœur** pour l'app.
 - **Vigilance** : testée en réel en provoquant une vraie anomalie (un programme non signé dans un dossier temporaire qui ouvre un port et envoie ~45 Mo sur Internet) : les **4 alertes attendues** sont apparues. Sur ce même Mac au repos, **aucune fausse alerte** n'a été observée (après apprentissage).
@@ -151,10 +151,10 @@ Il faut Xcode (ou les « Command Line Tools ») avec Swift ≥ 5.9. Testé avec 
 ./build_app.sh          # construit build/Vigie.app (arm64, signature « ad hoc »)
 ```
 ```bash
-./make_dmg.sh           # construit build/Vigie-1.1.dmg + sa somme SHA-256
+./make_dmg.sh           # construit build/Vigie-1.1.1.dmg + sa somme SHA-256
 ```
 ```bash
-swift test              # 42 tests unitaires
+swift test              # 45 tests unitaires
 ```
 ```bash
 tests/smoke_test.sh     # lance l'app sans accès à Homebrew et vérifie ses 10 écrans

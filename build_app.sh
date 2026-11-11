@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="Vigie"
-VERSION="${VERSION:-1.1}"
+VERSION="${VERSION:-1.1.1}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 BUNDLE_ID="io.github.wudstyz.vigie"
 MIN_MACOS="14.0"        # imposé par Package.swift (.macOS(.v14)) : API « Observation » de SwiftUI

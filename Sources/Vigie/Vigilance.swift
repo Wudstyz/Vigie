@@ -91,7 +91,10 @@ struct Baseline: Codable, Equatable {
     var apps: Set<String> = []          // applications déjà vues sur Internet
     var devices: Set<String> = []       // adresses MAC déjà vues sur le réseau local
     var listeners: Set<String> = []     // ports ouverts (visibles du réseau) déjà vus
-    var gateways: [String: String] = [:] // IP de la box -> adresse MAC attendue
+    var gateways: [String: String] = [:] // IP de la box -> dernière adresse MAC vue
+    /// IP de la box -> TOUTES les adresses MAC avec lesquelles elle a répondu (une box peut en avoir plusieurs :
+    /// interfaces filaire/Wi-Fi, répéteur…). Optionnel pour rester compatible avec les anciens fichiers.
+    var gatewayKnown: [String: Set<String>]? = nil
     var trusted: Set<String> = []       // applications auxquelles l'utilisateur fait confiance
 
     static var fileURL: URL {
@@ -302,21 +305,41 @@ final class VigilanceEngine {
         var out: [AlertCandidate] = []
         let learning = isLearning(now)
         for d in devices where !d.isThisMac && d.mac != "—" {
-            // Usurpation possible : l'adresse matérielle de la box a changé
+            // La box : on retient toutes les adresses avec lesquelles elle a répondu
+            var isGatewayDevice = false
             if let gw = gatewayIP, d.ip == gw {
-                if let expected = baseline.gateways[gw], expected != d.mac {
-                    out.append(AlertCandidate(
-                        key: "arp|\(gw)", severity: .important,
-                        title: "L'adresse matérielle de votre box a changé",
-                        explanation: "La box (\(gw)) répondait avec l'adresse \(expected) ; elle répond maintenant avec \(d.mac). C'est normal si vous avez changé de box ou de réseau. Sinon, quelqu'un peut se faire passer pour elle sur votre réseau : évitez les sites sensibles et vérifiez vos appareils.",
-                        appName: nil, appKey: nil, symbol: "exclamationmark.shield.fill", oneShot: true))
+                isGatewayDevice = true
+                var known = baseline.gatewayKnown?[gw] ?? baseline.gateways[gw].map { [$0] } ?? []
+                if !known.isEmpty && !known.contains(d.mac) {
+                    let oui = Self.oui(d.mac)
+                    if known.contains(where: { Self.oui($0) == oui }) {
+                        // Même fabricant : c'est le plus souvent la box elle-même (autre interface), un répéteur ou un boîtier de la même marque.
+                        out.append(AlertCandidate(
+                            key: "arp|\(gw)", severity: .info,
+                            title: "Votre box répond avec une autre adresse (même fabricant)",
+                            explanation: "La box (\(gw)) répondait avec \(known.sorted().joined(separator: ", ")) ; elle répond aussi avec \(d.mac), du même fabricant. C'est courant : box qui a plusieurs interfaces, répéteur Wi-Fi ou autre boîtier de la même marque. Rien à faire, sauf si vous ne reconnaissez pas cette adresse dans la page d'administration de votre box.",
+                            appName: nil, appKey: nil, symbol: "wifi.router", oneShot: true))
+                    } else {
+                        // Autre fabricant : usurpation possible
+                        out.append(AlertCandidate(
+                            key: "arp|\(gw)", severity: .important,
+                            title: "L'adresse matérielle de votre box a changé",
+                            explanation: "La box (\(gw)) répondait avec l'adresse \(known.sorted().joined(separator: ", ")) ; elle répond maintenant avec \(d.mac), d'un autre fabricant. C'est normal si vous avez changé de box ou de réseau. Sinon, quelqu'un peut se faire passer pour elle sur votre réseau : évitez les sites sensibles et vérifiez vos appareils.",
+                            appName: nil, appKey: nil, symbol: "exclamationmark.shield.fill", oneShot: true))
+                    }
+                }
+                if !known.contains(d.mac) {
+                    known.insert(d.mac)
+                    if baseline.gatewayKnown == nil { baseline.gatewayKnown = [:] }
+                    baseline.gatewayKnown![gw] = known
+                    dirty = true
                 }
                 if baseline.gateways[gw] != d.mac { baseline.gateways[gw] = d.mac; dirty = true }
             }
-            // Nouvel appareil
+            // Nouvel appareil (la box a sa propre règle ci-dessus)
             if !baseline.devices.contains(d.mac) {
                 baseline.devices.insert(d.mac); dirty = true
-                if !learning {
+                if !learning && !isGatewayDevice {
                     out.append(AlertCandidate(
                         key: "device|\(d.mac)", severity: .attention,
                         title: "Nouvel appareil sur votre réseau : \(d.name ?? d.ip)",
@@ -387,6 +410,11 @@ final class VigilanceEngine {
         let devDirs: Set<String> = [".nvm", ".cargo", ".rustup", ".pyenv", ".rbenv", ".volta", ".bun", ".deno", ".local", ".swiftpm", ".npm", ".sdkman", ".asdf", ".docker", ".ollama"]
         if comps.contains(where: { $0.hasPrefix(".") && !devDirs.contains(String($0)) && $0 != "." && $0 != ".." }) { return true }
         return false
+    }
+
+    /// Les 3 premiers octets d'une adresse MAC : ils identifient le fabricant.
+    static func oui(_ mac: String) -> String {
+        mac.lowercased().split(separator: ":").prefix(3).joined(separator: ":")
     }
 
     static func shortPath(_ path: String) -> String {
