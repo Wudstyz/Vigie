@@ -90,7 +90,7 @@ ctx.move(to: center)
 ctx.addLine(to: CGPoint(x: center.x + 322 * cos(headAngle), y: center.y + 322 * sin(headAngle)))
 ctx.strokePath()
 
-// Points détectés (bois / ambre : clin d'œil à Woodstyles) avec lueur
+// Points détectés (bois / ambre : clin d'œil à Wudstyz) avec lueur
 func blip(_ x: CGFloat, _ y: CGFloat, _ r: CGFloat, hot: Bool) {
     let c = CGPoint(x: x, y: y)
     let glow = CGGradient(colorsSpace: space,
