@@ -189,4 +189,4 @@ Les idées et corrections sont les bienvenues : ouvrez une *issue* pour en discu
 
 ## Licence
 
-[MIT](LICENSE) © 2026 Wudstyz. Voir aussi [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Les marques citées appartiennent à leurs propriétaires ; ce projet n'est affilié à aucun d'eux.
+[MIT](LICENSE) © 2026 Damien POLLET (Wudstyz). Voir aussi [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Les marques citées appartiennent à leurs propriétaires ; ce projet n'est affilié à aucun d'eux.

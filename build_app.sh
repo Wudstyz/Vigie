@@ -51,7 +51,7 @@ cat > "$BUILD_APP/Contents/Info.plist" <<PLIST
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSRequiresAquaSystemAppearance</key><true/>
-  <key>NSHumanReadableCopyright</key><string>© Wudstyz — licence MIT</string>
+  <key>NSHumanReadableCopyright</key><string>© Damien POLLET (Wudstyz) — licence MIT</string>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Vigie envoie un tout petit message à chaque adresse de votre réseau local pour afficher la liste des appareils connectés. Rien ne sort de votre réseau.</string>
 </dict>

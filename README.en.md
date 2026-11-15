@@ -191,4 +191,4 @@ Ideas and fixes are welcome: open an *issue* to discuss, or a *pull request* (wi
 
 ## License
 
-[MIT](LICENSE) © 2026 Wudstyz. See also [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Product names mentioned belong to their owners; this project is not affiliated with any of them.
+[MIT](LICENSE) © 2026 Damien POLLET (Wudstyz). See also [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Product names mentioned belong to their owners; this project is not affiliated with any of them.
